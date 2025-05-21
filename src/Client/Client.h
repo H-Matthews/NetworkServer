@@ -1,14 +1,21 @@
 #pragma once
 
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
+#include <string>
+
 class Client
 {
     public:
-        Client(int portNumber);
+        Client(const std::string ipAddress, const std::string port);
 
-        inline int getPortNumber() const;
+        void setup();
 
     private:
-        int mPortNumber;
-};
+        const std::string mIpAddress;
+        const std::string mPortNumber;
 
- int Client::getPortNumber() const { return mPortNumber; }
+        int mFileDescriptor;
+        struct sockaddr_in mServerAddress;
+};

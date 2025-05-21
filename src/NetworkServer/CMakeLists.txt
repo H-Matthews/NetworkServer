@@ -4,8 +4,11 @@ project ( Network-Server LANGUAGES CXX)
 set(LIBRARY_NAME Network-Server)
 
 # Set Source Files
-set(INC_FILES NetworkServer.h)
-set(SRC_FILES NetworkServer.cpp)
+set(INC_FILES NetworkServer.h
+              NetworkTypes.h)
+
+set(SRC_FILES NetworkServer.cpp
+              NetworkTypes.cpp )
 
 add_library( ${LIBRARY_NAME} STATIC ${INC_FILES} ${SRC_FILES} )
 
