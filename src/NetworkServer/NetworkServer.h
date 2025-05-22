@@ -39,30 +39,35 @@ struct ServerAddressInfo
         ipAddr(address),
         serverAddr()
     { }
+
+    ServerAddressInfo(const std::string port) :
+        port(port),
+        ipAddr(),
+        serverAddr()
+    { }
 };
 
 class NetworkServer
 {
     public:
-        NetworkServer(SocketUtils::Domain domain, SocketUtils::Protocol protocol,
-                      const std::string ipAddr, const std::string portNumber);
+        NetworkServer(SocketUtils::Domain domain, SocketUtils::Protocol protocol, 
+                      const std::string portNumber);
 
         // Wrapper around the Unix socket function
         bool initializeSocket();
-
-        // Sets up the socket information
-        void configureSocket();
-
-        // IMPORTANT: Even though UDP does NOT use Listen
-        // This function still must be called to bind, but it does NOT invoke listen on the socket
-        bool bindAndListen();
 
         void start();
 
         void printServerStatus();
     private:
+
+        bool initializeTCPSocket();
+        bool initializeUDPSocket();
+
         void startTCPServer();
         void startUDPServer();
+
+        void logClientInformation(int clientSocketFD, socklen_t clientAddrSize);
 
         // Converts to the UNIX defined value
         int convertDomain(SocketUtils::Domain domain);

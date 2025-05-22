@@ -41,34 +41,45 @@ void Client::setup()
         {
             isConnected = true;
         }
+
+        std::cout << "Connected to Server " << std::endl;
+
+        businessLogic();
     }
 
-    std::cout << "Connected to Server " << std::endl;
+    return;
+}
 
-    // The below code should be eradicated quickly
+void Client::businessLogic()
+{
+    int bytes = 0;
 
-    char buffer[MAX];
-    int n;
+    std::string userText;
+    std::string serverResponse;
 
     while( 1 )
     {
-        bzero( &buffer, sizeof(buffer));
-        std::cout << "Enter text: ";
-        
-        n = 0;
-        while( (buffer[n++] = getchar() != '\n') );
+        std::cout << "Enter Text: ";
+        std::getline(std::cin, userText);
 
-        write(mFileDescriptor, buffer, sizeof(buffer));
-        bzero(buffer, sizeof(buffer) );
-        read(mFileDescriptor, buffer, sizeof(buffer) );
+        bytes = send( mFileDescriptor, userText.c_str(), userText.length(), 0 );
 
-        printf("From Server: %s ", buffer);
-
-        if( ( strncmp( buffer, "exit", 4 ) ) == 0 )
+        if( bytes == -1)
         {
-            std::cout << "Client Disconnecting... " << std::endl;
-            break;
+            perror("Server: Send");
+            userText.clear();
         }
+
+        if(bytes != (int)userText.length())
+        {
+            std::cout << "Bytes sent: " << bytes << std::endl;
+            std::cout << "Total number of Bytes " << userText.length() << std::endl;
+        }
+
+        std::cout << "Bytes Sent: " << bytes << std::endl;
+        std::cout << "Total number of Bytes in Response: " << userText.length() << std::endl;
+
+        userText.clear();
     }
 
     return;

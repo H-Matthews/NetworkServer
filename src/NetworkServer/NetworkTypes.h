@@ -24,7 +24,6 @@ namespace SocketUtils
     {
         UNINITIALIZED = 0,
         INITIALIZED,
-        READY,
         RUNNING
     };
 

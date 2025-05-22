@@ -13,6 +13,9 @@ class Client
         void setup();
 
     private:
+        void businessLogic();
+
+    private:
         const std::string mIpAddress;
         const std::string mPortNumber;
 

@@ -67,11 +67,6 @@ std::string SocketUtils::toString(SocketUtils::Status status)
             retString = "INITIALIZED";
             break;
         }
-        case SocketUtils::Status::READY:
-        {
-            retString = "READY";
-            break;
-        }
         case SocketUtils::Status::RUNNING:
         {
             retString = "RUNNING";

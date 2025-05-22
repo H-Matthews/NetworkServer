@@ -6,9 +6,13 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+
 NetworkServer::NetworkServer(SocketUtils::Domain domain, SocketUtils::Protocol protocol,
-                             const std::string ipAddr, const std::string portNumber ) :
-    mServerAddrInfo(ipAddr, portNumber),
+                             const std::string portNumber ) :
+    mServerAddrInfo(portNumber),
     mSocket(domain, protocol),
     mStatus(SocketUtils::Status::UNINITIALIZED)
 {
@@ -26,61 +30,111 @@ bool NetworkServer::initializeSocket()
     if(socketProtocol == -1)
         return false;
 
-    // Request a socket endpoint
-    mSocket.fileDescriptor = socket(socketDomain, socketProtocol, 0);
-    if(mSocket.fileDescriptor < 0)
+    bool status = false;
+    if(mSocket.transportProtocol == SocketUtils::Protocol::TCP)
     {
-        handleError();
-        std::cout << "Failed to create Socket! " << std::endl;
+        status = initializeTCPSocket();
+    }
+    else if( mSocket.transportProtocol == SocketUtils::Protocol::UDP)
+    {
+        status = initializeUDPSocket();
+    }
+
+    return status;
+}
+
+bool NetworkServer::initializeTCPSocket()
+{
+    struct addrinfo hints;
+    struct addrinfo* serverInfo;
+    memset( &hints, 0, sizeof(hints) );
+
+    // Fill out hints 
+    hints.ai_family = mSocket.unixDomainValue;
+    hints.ai_socktype = mSocket.unixProtocolValue;
+    hints.ai_flags = AI_PASSIVE;    // Find a suitable IP
+
+    // returns 0 if it succeeds
+    int retStatus = getaddrinfo(NULL, mServerAddrInfo.port.c_str(), &hints, &serverInfo );
+    if( retStatus != 0)
+    {
+        fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror( retStatus ) );
         return false;
     }
+
+    // Walk through our serverInfo list, and attempt to bind to the first possible address
+
+    struct addrinfo* current = serverInfo;
+    char ipstr[INET6_ADDRSTRLEN];
+    int yes = 1;
+    while( current != nullptr)
+    {
+        mSocket.fileDescriptor = socket(current->ai_family, current->ai_socktype, current->ai_protocol );
+        if(mSocket.fileDescriptor == -1)
+        {
+            perror("Server: Socket");
+            continue;
+        }
+
+        // Prevents the error message "Address in use"
+        if(setsockopt(mSocket.fileDescriptor, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+        {
+            perror("Server: Setsockopt");
+            return false;
+        }
+
+        if(bind( mSocket.fileDescriptor, current->ai_addr, current->ai_addrlen) == -1)
+        {
+            close(mSocket.fileDescriptor);
+            perror("Server: Bind");
+            current = serverInfo->ai_next;
+            continue;
+        }
+        
+        // If we get here we successfuly binded a socket, so exit
+        break;
+    }
+
+    if(current == nullptr)
+    {
+        fprintf(stderr, "Server: failed to bind\n" );
+        return false;
+    }
+
+    // This is ugly but unfortunately necessary in order to get the ip address to a string
+    void* addr = &( ( (struct sockaddr_in* ) current->ai_addr )->sin_addr );
+    inet_ntop(current->ai_family, addr, ipstr, sizeof(ipstr) );
+    mServerAddrInfo.ipAddr = ipstr;
+
+    // Free structure
+    freeaddrinfo(serverInfo);
+
+    if( listen(mSocket.fileDescriptor, 10) == -1)
+    {
+        perror("Server: Listen");
+        return false;
+    }
+
+    std::cout << "Server: Initialized TCP Socket... Ready to listen for Connections" << std::endl;
 
     mStatus = SocketUtils::Status::INITIALIZED;
 
     return true;
 }
 
-void NetworkServer::configureSocket()
+// TODO: FILL THIS OUT
+bool NetworkServer::initializeUDPSocket()
 {
-    mServerAddrInfo.serverAddr.sin_family = mSocket.unixDomainValue;
 
-    // Convert to Network Byte Order (Big Endian)
-    mServerAddrInfo.serverAddr.sin_port = htons( std::stoi( mServerAddrInfo.port ) );
-    mServerAddrInfo.serverAddr.sin_addr.s_addr = inet_addr( mServerAddrInfo.ipAddr.c_str() );
-
-    return;
-}
-
-bool NetworkServer::bindAndListen()
-{
-    if( bind( mSocket.fileDescriptor, (struct sockaddr*)&mServerAddrInfo.serverAddr, sizeof(mServerAddrInfo.serverAddr)) < 0)
-    {
-        handleError();
-        std::cout << "Failed to bind Socket! " << std::endl;
-        return false;
-    }
-
-    // Listen is only for TCP
-    if(! (mSocket.transportProtocol == SocketUtils::Protocol::UDP) )
-    {
-        if( listen( mSocket.fileDescriptor, 10) < 0)
-        {
-            handleError();
-            std::cout << "Invoking listen on the binded socket failed " << std::endl;
-            return false;
-        }
-    }
-
-    mStatus = SocketUtils::Status::READY;
 
     return true;
 }
 
 void NetworkServer::start()
 {
-    if(mStatus != SocketUtils::Status::READY)
+    if(mStatus != SocketUtils::Status::INITIALIZED)
     {
-        std::cout << "The server was NOT in a READY state to start... " << std::endl;
+        std::cout << "The server was NOT in the INITIALIZED state to start... " << std::endl;
         return;
     }
 
@@ -114,17 +168,18 @@ void NetworkServer::startTCPServer()
         int clientSocketFD = accept(mSocket.fileDescriptor, (struct sockaddr*)&clientAddr, &clientAddrSize);
         if(clientSocketFD < 0 )
         {
-            handleError();
+            perror("Server: accept");
             std::cout << "Failed to accept client request " << std::endl;
         }
 
         std::cout << "Received a connection! " << std::endl;
+        logClientInformation(clientSocketFD, clientAddrSize);
 
         handleRequest(clientSocketFD);
         std::cout << "Client Dealt with" << std::endl;
     }
 
-    mStatus = SocketUtils::Status::READY;
+    mStatus = SocketUtils::Status::INITIALIZED;
     return;
 }
 
@@ -151,7 +206,7 @@ void NetworkServer::startUDPServer()
         // TODO Handle Request and send Response
     }
 
-    mStatus = SocketUtils::Status::READY;
+    mStatus = SocketUtils::Status::INITIALIZED;
     return;
 }
 
@@ -159,29 +214,54 @@ void NetworkServer::handleRequest(int clientSocketFD)
 {
     char rBuffer[100] = "";
     char sBuffer[100] = "";
-    int n;
+    int bytes = 0;
 
     while(1)
     {
-        recv(clientSocketFD, rBuffer, sizeof(rBuffer), 0);
-    
-        printf("\n[client] %s", rBuffer);
-        if(strcmp(rBuffer, "exit" ) == 0)
+        bytes = recv(clientSocketFD, rBuffer, sizeof(rBuffer), 0);
+        if(bytes == -1)
+        {
+            perror("Server: Recv");
             break;
+        }
 
-        printf("\n[server] " );
-        n = 0;
-        while( (sBuffer[n++] = getchar() != '\n') );
-        send(clientSocketFD, sBuffer, sizeof(sBuffer), 0);
-        if(strcmp(sBuffer, "exit") == 0)
+        if(bytes == 0)
+        {
+            std::cout << "Client closed the connection " << std::endl;
             break;
-        printf("\n");
+        }
+
+        rBuffer[bytes] = '\0';
+        printf("Server: Received '%s' \n", rBuffer);
     }
 
+    close(clientSocketFD);
     return;
 }
 
 // UTILITY FUNCTIONS BELOW ------------------------------------
+
+void NetworkServer::logClientInformation(int clientSocketFD, socklen_t clientAddrSize)
+{
+    struct sockaddr_in address;
+    int ret = getpeername(clientSocketFD, (struct sockaddr*)&address, &clientAddrSize);
+    if(ret == -1)
+    {
+        perror("Server: getpeername");
+        return;
+    }
+
+    char hostName[INET6_ADDRSTRLEN];
+    getnameinfo((struct sockaddr*)&address, sizeof(address), hostName, sizeof( hostName), NULL, 0, 0);
+
+    std::string host = hostName;
+    std::cout << "Client Name: " << host << std::endl;
+
+    // inet_ntop(current->ai_family, addr, ipstr, sizeof(ipstr) );
+    // inet_ntop(address.sin_family, )
+
+    return;
+}
 
 // Converts to the UNIX defined value
 int NetworkServer::convertDomain(SocketUtils::Domain domain)
