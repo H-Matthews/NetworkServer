@@ -27,7 +27,7 @@ void Client::setup()
     mServerAddress.sin_addr.s_addr = inet_addr( mIpAddress.c_str() );
     mServerAddress.sin_port = htons( std::stoi( mPortNumber ) );
 
-    // Connect the client socket to server socket
+    // Attempt to connect to the server IP/Port
     bool isConnected = false;
     while(! isConnected )
     {
@@ -40,10 +40,12 @@ void Client::setup()
         else
         {
             isConnected = true;
+            std::cout << "Connected to Server " << std::endl;
         }
+    }
 
-        std::cout << "Connected to Server " << std::endl;
-
+    while(isConnected)
+    {
         businessLogic();
     }
 
